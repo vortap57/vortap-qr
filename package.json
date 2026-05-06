@@ -6,6 +6,9 @@
   "scripts": {
     "start": "node server.mjs"
   },
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  },
   "engines": {
     "node": "22.x"
   }
