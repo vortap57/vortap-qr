@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Vortap</title>
+  <defs>
+    <linearGradient id="metal" x1="130" y1="120" x2="360" y2="390" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.48" stop-color="#cfd3d2"/>
+      <stop offset="1" stop-color="#767d80"/>
+    </linearGradient>
+    <linearGradient id="base" x1="116" y1="92" x2="404" y2="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3b4144"/>
+      <stop offset="1" stop-color="#171c1f"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#base)" d="M173 70h166c34 0 48 9 65 38l84 146c16 29 16 45 0 74l-84 146c-17 29-31 38-65 38H173c-34 0-48-9-65-38L24 328c-16-29-16-45 0-74l84-146c17-29 31-38 65-38Z"/>
+  <path fill="url(#metal)" d="M132 152h62c15 0 22 5 29 18l64 119 63-119c7-13 14-18 29-18h61L320 370c-15 27-32 40-64 40s-49-13-64-40L132 152Z"/>
+  <path fill="#ffffff" fill-opacity=".32" d="M132 152h62c15 0 22 5 29 18l35 66-32 58L132 152Z"/>
+</svg>
