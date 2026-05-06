@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#242424">
+    <title>Vortap - QR codes dynamiques</title>
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/">
+        <img src="assets/vortap-logo.svg" alt="Vortap">
+        <span><strong>Vortap</strong><small>Dynamic QR</small></span>
+      </a>
+      <nav>
+        <a href="#generator">Creer</a>
+        <a href="#dashboard">Dashboard</a>
+        <a href="#settings">Domaine</a>
+      </nav>
+    </header>
+
+    <main>
+      <section id="generator" class="hero">
+        <div>
+          <p class="badge">QR codes editables apres impression</p>
+          <h1>Generez des QR codes dynamiques pour vos clients.</h1>
+          <p>Creer un QR, telecharger le visuel, puis changer l'URL plus tard depuis le dashboard.</p>
+        </div>
+        <aside class="preview-card">
+          <div id="preview-qr" class="qr-preview"></div>
+          <strong id="preview-status">A creer</strong>
+          <a id="preview-link" target="_blank" rel="noreferrer"></a>
+          <div class="row">
+            <button id="preview-svg" type="button" disabled>SVG</button>
+            <button id="preview-png" type="button" disabled>PNG</button>
+          </div>
+        </aside>
+      </section>
+
+      <section class="panel">
+        <form id="create-form" class="grid-form">
+          <h2>Nouveau QR</h2>
+          <label>Nom de campagne<input id="name" name="name" required placeholder="Menu, flyer, carte de visite"></label>
+          <label>URL de destination<input id="targetUrl" name="targetUrl" type="url" required placeholder="https://vortap.io"></label>
+          <div class="row">
+            <label>Couleur QR<input id="foreground" name="foreground" type="color" value="#242424"></label>
+            <label>Fond<input id="background" name="background" type="color" value="#ffffff"></label>
+          </div>
+          <button class="primary" type="submit">Creer un QR dynamique</button>
+          <p id="form-error" class="error" role="alert"></p>
+        </form>
+      </section>
+
+      <section id="settings" class="panel muted-panel">
+        <form id="base-form" class="grid-form">
+          <h2>Domaine public des QR</h2>
+          <p>Sur Render, gardez l'URL publique ou utilisez `https://qr.vortap.fr` quand le domaine est branche.</p>
+          <label>Domaine public<input id="base-url" name="baseUrl" type="url" required></label>
+          <button type="submit">Appliquer</button>
+          <p id="base-warning" class="warning"></p>
+          <p id="domain-diagnostic"></p>
+        </form>
+      </section>
+
+      <section id="dashboard" class="dashboard">
+        <div class="section-head">
+          <div><p class="badge">Dashboard utilisateur</p><h2>Mes QR codes</h2></div>
+          <div class="stats"><span><b id="total-codes">0</b> QR</span><span><b id="total-scans">0</b> scans</span></div>
+        </div>
+        <div id="empty" class="empty"><h3>Aucun QR</h3><p>Creez votre premier QR dynamique.</p></div>
+        <div id="codes" class="codes"></div>
+      </section>
+    </main>
+
+    <template id="code-card">
+      <article class="card">
+        <div class="qr-box"></div>
+        <div class="card-body">
+          <h3 class="card-title"></h3>
+          <a class="short-link" target="_blank" rel="noreferrer"></a>
+          <form class="edit-form">
+            <label>Nom<input name="name" required></label>
+            <label>URL actuelle<input name="targetUrl" type="url" required></label>
+            <div class="row">
+              <label>Couleur<input name="foreground" type="color"></label>
+              <label>Fond<input name="background" type="color"></label>
+            </div>
+            <div class="actions">
+              <button type="submit">Enregistrer</button>
+              <a class="download-svg" download>SVG</a>
+              <button class="download-png" type="button">PNG</button>
+              <button class="delete" type="button">Supprimer</button>
+            </div>
+          </form>
+          <p class="meta"><b class="scans"></b> scans · <span class="updated"></span></p>
+        </div>
+      </article>
+    </template>
+
+    <script src="mobile-config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
