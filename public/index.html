@@ -55,10 +55,10 @@
 
       <section id="settings" class="panel muted-panel">
         <form id="base-form" class="grid-form">
-          <h2>Domaine public des QR</h2>
-          <p>Sur Render, gardez l'URL publique ou utilisez `https://qr.vortap.fr` quand le domaine est branche.</p>
-          <label>Domaine public<input id="base-url" name="baseUrl" type="url" required></label>
-          <button type="submit">Appliquer</button>
+          <h2>Environnement QR</h2>
+          <p>Le serveur genere automatiquement le bon domaine public pour chaque QR.</p>
+          <label>Domaine public<input id="base-url" name="baseUrl" type="url" readonly></label>
+          <button type="submit">Verifier</button>
           <p id="base-warning" class="warning"></p>
           <p id="domain-diagnostic"></p>
         </form>
@@ -100,7 +100,6 @@
     </template>
 
     <script src="mobile-config.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
     <script src="app.js"></script>
   </body>
 </html>
