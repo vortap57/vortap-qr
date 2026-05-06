@@ -3,7 +3,7 @@ services:
     name: vortap-qr
     runtime: node
     plan: starter
-    buildCommand: "true"
+    buildCommand: "npm install"
     startCommand: "node server.mjs"
     healthCheckPath: /health
     envVars:
