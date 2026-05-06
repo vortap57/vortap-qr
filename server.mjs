@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
+import QRCode from "qrcode";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
 const publicDir = join(root, "public");
@@ -29,9 +30,7 @@ const corsHeaders = {
 
 async function ensureDb() {
   await mkdir(dataDir, { recursive: true });
-  if (!existsSync(dbFile)) {
-    await writeFile(dbFile, JSON.stringify({ codes: [] }, null, 2));
-  }
+  if (!existsSync(dbFile)) await writeFile(dbFile, JSON.stringify({ codes: [] }, null, 2));
 }
 
 async function readDb() {
@@ -58,6 +57,30 @@ async function bodyJson(req) {
   return raw ? JSON.parse(raw) : {};
 }
 
+function normalizeBaseUrl(value) {
+  if (!value) return "";
+  try {
+    const parsed = new URL(value);
+    if (!["http:", "https:"].includes(parsed.protocol)) return "";
+    return parsed.href.replace(/\/+$/, "");
+  } catch {
+    return "";
+  }
+}
+
+function publicBaseUrl(req) {
+  const configured = normalizeBaseUrl(process.env.PUBLIC_BASE_URL);
+  if (configured) return configured;
+  const proto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim() || "http";
+  const forwardedHost = String(req.headers["x-forwarded-host"] || "").split(",")[0].trim();
+  return `${proto}://${forwardedHost || req.headers.host}`.replace(/\/+$/, "");
+}
+
+function ownerToken(req) {
+  const token = req.headers["x-vortap-owner"];
+  return typeof token === "string" && token.trim() ? token.trim() : "anonymous";
+}
+
 function isUrl(value) {
   try {
     const parsed = new URL(value);
@@ -71,16 +94,21 @@ function isHexColor(value) {
   return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value);
 }
 
-function ownerToken(req) {
-  const token = req.headers["x-vortap-owner"];
-  return typeof token === "string" && token.trim() ? token.trim() : "anonymous";
+function dynamicUrl(baseUrl, id) {
+  return `${baseUrl}/r/${id}`;
 }
 
-function cleanCode(code) {
+function qrSvgUrl(baseUrl, id) {
+  return `${baseUrl}/qr/${id}.svg`;
+}
+
+function cleanCode(code, baseUrl) {
   return {
     id: code.id,
     name: code.name,
     targetUrl: code.targetUrl,
+    dynamicUrl: dynamicUrl(baseUrl, code.id),
+    qrSvgUrl: qrSvgUrl(baseUrl, code.id),
     foreground: code.foreground || "#242424",
     background: code.background || "#ffffff",
     scans: code.scans || 0,
@@ -90,12 +118,31 @@ function cleanCode(code) {
   };
 }
 
+async function createQrSvg(text, code) {
+  return QRCode.toString(text, {
+    type: "svg",
+    errorCorrectionLevel: "M",
+    margin: 4,
+    color: {
+      dark: code.foreground || "#242424",
+      light: code.background || "#ffffff"
+    }
+  });
+}
+
 async function handleApi(req, res, url) {
   const db = await readDb();
   const owner = ownerToken(req);
+  const baseUrl = publicBaseUrl(req);
+
+  if (url.pathname === "/api/status" && req.method === "GET") {
+    json(res, 200, { ok: true, publicBaseUrl: baseUrl });
+    return true;
+  }
 
   if (url.pathname === "/api/codes" && req.method === "GET") {
-    json(res, 200, { codes: db.codes.filter((code) => code.ownerToken === owner).map(cleanCode).reverse() });
+    const codes = db.codes.filter((code) => code.ownerToken === owner).map((code) => cleanCode(code, baseUrl)).reverse();
+    json(res, 200, { codes });
     return true;
   }
 
@@ -105,7 +152,6 @@ async function handleApi(req, res, url) {
       json(res, 400, { error: "Nom et URL valide requis." });
       return true;
     }
-
     const now = new Date().toISOString();
     const code = {
       id: randomUUID().slice(0, 8),
@@ -121,7 +167,7 @@ async function handleApi(req, res, url) {
     };
     db.codes.push(code);
     await writeDb(db);
-    json(res, 201, { code: cleanCode(code) });
+    json(res, 201, { code: cleanCode(code, baseUrl) });
     return true;
   }
 
@@ -147,7 +193,7 @@ async function handleApi(req, res, url) {
     if (payload.background !== undefined) code.background = isHexColor(payload.background) ? payload.background : code.background;
     code.updatedAt = new Date().toISOString();
     await writeDb(db);
-    json(res, 200, { code: cleanCode(code) });
+    json(res, 200, { code: cleanCode(code, baseUrl) });
     return true;
   }
 
@@ -162,17 +208,29 @@ async function handleApi(req, res, url) {
   return false;
 }
 
-async function handleRedirect(res, url) {
+async function handleQrSvg(req, res, url) {
+  const match = url.pathname.match(/^\/qr\/([a-zA-Z0-9-]+)\.svg$/);
+  if (!match) return false;
+  const db = await readDb();
+  const code = db.codes.find((item) => item.id === match[1]);
+  if (!code) {
+    send(res, 404, "QR code introuvable", "text/plain; charset=utf-8");
+    return true;
+  }
+  const svg = await createQrSvg(dynamicUrl(publicBaseUrl(req), code.id), code);
+  send(res, 200, svg, "image/svg+xml; charset=utf-8");
+  return true;
+}
+
+async function handleRedirect(req, res, url) {
   const match = url.pathname.match(/^\/r\/([a-zA-Z0-9-]+)$/);
   if (!match) return false;
-
   const db = await readDb();
   const code = db.codes.find((item) => item.id === match[1]);
   if (!code) {
     send(res, 404, "<h1>QR code introuvable</h1>", "text/html; charset=utf-8");
     return true;
   }
-
   code.scans = (code.scans || 0) + 1;
   code.lastScanAt = new Date().toISOString();
   await writeDb(db);
@@ -203,13 +261,13 @@ const server = createServer(async (req, res) => {
       res.end();
       return;
     }
-
     const url = new URL(req.url, `http://${req.headers.host}`);
     if (url.pathname === "/health") {
       send(res, 200, "ok", "text/plain; charset=utf-8");
       return;
     }
-    if (await handleRedirect(res, url)) return;
+    if (await handleQrSvg(req, res, url)) return;
+    if (await handleRedirect(req, res, url)) return;
     if (url.pathname.startsWith("/api/") && await handleApi(req, res, url)) return;
     await serveStatic(res, url.pathname);
   } catch (error) {
