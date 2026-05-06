@@ -1,23 +1,14 @@
-const BASE_KEY = "vortap.baseUrl";
 const OWNER_KEY = "vortap.ownerToken";
 const VORTAP_CONFIG = window.VORTAP_CONFIG || {};
-const isNative = ["capacitor:", "ionic:"].includes(location.protocol);
-const configApi = normalizeBaseUrl(VORTAP_CONFIG.apiUrl);
-const configDomain = normalizeBaseUrl(VORTAP_CONFIG.publicQrDomain);
-const apiBase = isNative && configApi ? configApi : location.origin;
-const defaultBase = isNative ? (configDomain || configApi || apiBase) : location.origin;
-const savedBase = normalizeBaseUrl(localStorage.getItem(BASE_KEY));
+const IS_NATIVE_APP = ["capacitor:", "ionic:"].includes(location.protocol);
+const CONFIG_API_URL = normalizeBaseUrl(VORTAP_CONFIG.apiUrl);
+const API_BASE_URL = IS_NATIVE_APP && CONFIG_API_URL ? CONFIG_API_URL : location.origin;
 
-const state = {
-  codes: [],
-  baseUrl: savedBase || defaultBase,
-  activePreviewCode: null
-};
+const state = { codes: [], status: null, activePreviewCode: null };
 
 const els = {
   form: document.querySelector("#create-form"),
   error: document.querySelector("#form-error"),
-  targetUrl: document.querySelector("#targetUrl"),
   foreground: document.querySelector("#foreground"),
   background: document.querySelector("#background"),
   previewQr: document.querySelector("#preview-qr"),
@@ -46,7 +37,7 @@ function ownerToken() {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch(`${apiBase.replace(/\/+$/, "")}${path}`, {
+  const response = await fetch(`${API_BASE_URL.replace(/\/+$/, "")}${path}`, {
     headers: { "Content-Type": "application/json", "X-Vortap-Owner": ownerToken() },
     ...options
   });
@@ -66,34 +57,26 @@ function normalizeBaseUrl(value) {
   }
 }
 
-function shortUrl(id) {
-  return `${state.baseUrl.replace(/\/+$/, "")}/r/${id}`;
+function cacheBust(url) {
+  return `${url}${url.includes("?") ? "&" : "?"}v=${Date.now()}`;
 }
 
-function activePreviewUrl() {
-  return state.activePreviewCode ? shortUrl(state.activePreviewCode.id) : `${state.baseUrl.replace(/\/+$/, "")}/r/demo`;
+function safeName(value, fallback = "qr") {
+  return (value || fallback).toLowerCase().replace(/[^a-z0-9]+/g, "-") || fallback;
 }
 
-function currentDesign() {
-  return {
-    foreground: els.foreground.value || "#242424",
-    background: els.background.value || "#ffffff"
-  };
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#039;"
+  }[char]));
 }
 
-function buildQr(text) {
-  if (!window.qrcode) throw new Error("Bibliotheque QR indisponible.");
-  const qr = window.qrcode(0, "M");
-  qr.addData(text);
-  qr.make();
-  return qr;
-}
-
-function qrSvg(text, design = {}) {
-  return buildQr(text)
-    .createSvgTag({ cellSize: 8, margin: 32, scalable: true, alt: "QR code Vortap" })
-    .replace('fill="white"', `fill="${design.background || "#ffffff"}"`)
-    .replace('fill="black"', `fill="${design.foreground || "#242424"}"`);
+function qrImg(code) {
+  return `<img src="${cacheBust(code.qrSvgUrl)}" alt="QR code ${escapeHtml(code.name)}">`;
 }
 
 function inactiveQrPreview() {
@@ -102,11 +85,10 @@ function inactiveQrPreview() {
 
 function renderPreview() {
   const active = Boolean(state.activePreviewCode);
-  const link = activePreviewUrl();
-  els.previewQr.innerHTML = active ? qrSvg(link, currentDesign()) : inactiveQrPreview();
+  els.previewQr.innerHTML = active ? qrImg(state.activePreviewCode) : inactiveQrPreview();
   els.previewStatus.textContent = active ? "Scannable" : "A creer";
-  els.previewLink.textContent = active ? link : "Le lien apparait apres creation";
-  els.previewLink.href = active ? link : "#generator";
+  els.previewLink.textContent = active ? state.activePreviewCode.dynamicUrl : "Le QR serveur apparait apres creation";
+  els.previewLink.href = active ? state.activePreviewCode.dynamicUrl : "#generator";
   els.previewSvg.disabled = !active;
   els.previewPng.disabled = !active;
 }
@@ -116,8 +98,13 @@ function formatDate(value) {
   return new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
-function safeName(value, fallback = "qr") {
-  return (value || fallback).toLowerCase().replace(/[^a-z0-9]+/g, "-") || fallback;
+function refreshStatus() {
+  const publicBaseUrl = state.status?.publicBaseUrl || API_BASE_URL;
+  els.baseUrl.value = publicBaseUrl;
+  els.domainDiagnostic.textContent = `QR generes par le serveur: ${publicBaseUrl}`;
+  els.baseWarning.textContent = publicBaseUrl.includes("127.0.0.1") || publicBaseUrl.includes("localhost")
+    ? "Mode local: pour les clients, utilisez l'URL Render publique."
+    : "";
 }
 
 function render() {
@@ -125,21 +112,17 @@ function render() {
   els.empty.hidden = state.codes.length > 0;
   els.totalCodes.textContent = state.codes.length;
   els.totalScans.textContent = state.codes.reduce((sum, code) => sum + code.scans, 0);
-  els.baseUrl.value = state.baseUrl;
-  els.domainDiagnostic.textContent = `Les QR utilisent: ${state.baseUrl}`;
+  refreshStatus();
   renderPreview();
 
   for (const code of state.codes) {
     const fragment = els.template.content.cloneNode(true);
     const card = fragment.querySelector(".card");
     const form = fragment.querySelector(".edit-form");
-    const design = { foreground: code.foreground, background: code.background };
-    const link = shortUrl(code.id);
-    const svg = qrSvg(link, design);
-    fragment.querySelector(".qr-box").innerHTML = svg;
+    fragment.querySelector(".qr-box").innerHTML = qrImg(code);
     fragment.querySelector(".card-title").textContent = code.name;
-    fragment.querySelector(".short-link").textContent = link;
-    fragment.querySelector(".short-link").href = link;
+    fragment.querySelector(".short-link").textContent = code.dynamicUrl;
+    fragment.querySelector(".short-link").href = code.dynamicUrl;
     fragment.querySelector(".scans").textContent = code.scans;
     fragment.querySelector(".updated").textContent = formatDate(code.lastScanAt);
     form.name.value = code.name;
@@ -148,22 +131,25 @@ function render() {
     form.background.value = code.background || "#ffffff";
 
     const filename = `vortap-${safeName(code.name, code.id)}`;
-    const downloadSvg = fragment.querySelector(".download-svg");
-    downloadSvg.href = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
-    downloadSvg.download = `${filename}.svg`;
-    fragment.querySelector(".download-png").addEventListener("click", () => downloadPng(link, design, filename));
+    const svgLink = fragment.querySelector(".download-svg");
+    svgLink.href = code.qrSvgUrl;
+    svgLink.download = `${filename}.svg`;
+    fragment.querySelector(".download-png").addEventListener("click", () => downloadPng(code, filename));
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       const data = Object.fromEntries(new FormData(form));
       const { code: updated } = await api(`/api/codes/${code.id}`, { method: "PATCH", body: JSON.stringify(data) });
       state.codes = state.codes.map((item) => item.id === updated.id ? updated : item);
+      if (state.activePreviewCode?.id === updated.id) state.activePreviewCode = updated;
       render();
     });
 
     fragment.querySelector(".delete").addEventListener("click", async () => {
+      if (!confirm(`Supprimer "${code.name}" ?`)) return;
       await api(`/api/codes/${code.id}`, { method: "DELETE" });
       state.codes = state.codes.filter((item) => item.id !== code.id);
+      if (state.activePreviewCode?.id === code.id) state.activePreviewCode = state.codes[0] || null;
       render();
     });
 
@@ -171,28 +157,26 @@ function render() {
   }
 }
 
-function downloadPng(text, design, filename) {
-  const qr = buildQr(text);
-  const count = qr.getModuleCount();
-  const margin = 4;
-  const scale = 18;
-  const size = (count + margin * 2) * scale;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d");
-  ctx.fillStyle = design.background || "#ffffff";
-  ctx.fillRect(0, 0, size, size);
-  ctx.fillStyle = design.foreground || "#242424";
-  for (let row = 0; row < count; row++) {
-    for (let col = 0; col < count; col++) {
-      if (qr.isDark(row, col)) ctx.fillRect((col + margin) * scale, (row + margin) * scale, scale, scale);
-    }
-  }
-  const a = document.createElement("a");
-  a.href = canvas.toDataURL("image/png");
-  a.download = `${filename}.png`;
-  a.click();
+async function downloadPng(code, filename) {
+  const response = await fetch(cacheBust(code.qrSvgUrl));
+  const svg = await response.text();
+  const image = new Image();
+  const objectUrl = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+  image.onload = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1200;
+    canvas.height = 1200;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = code.background || "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    URL.revokeObjectURL(objectUrl);
+    const a = document.createElement("a");
+    a.href = canvas.toDataURL("image/png");
+    a.download = `${filename}.png`;
+    a.click();
+  };
+  image.src = objectUrl;
 }
 
 els.form.addEventListener("submit", async (event) => {
@@ -214,37 +198,26 @@ els.form.addEventListener("submit", async (event) => {
 
 els.baseForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  const next = normalizeBaseUrl(els.baseUrl.value);
-  if (!next) {
-    els.baseWarning.textContent = "Entrez une adresse valide.";
-    return;
-  }
-  state.baseUrl = next;
-  localStorage.setItem(BASE_KEY, next);
-  render();
+  refreshStatus();
 });
-
-for (const input of [els.targetUrl, els.foreground, els.background]) {
-  input.addEventListener("input", renderPreview);
-}
 
 els.previewSvg.addEventListener("click", () => {
   if (!state.activePreviewCode) return;
-  const svg = qrSvg(activePreviewUrl(), currentDesign());
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+  a.href = state.activePreviewCode.qrSvgUrl;
   a.download = `vortap-${safeName(state.activePreviewCode.name, state.activePreviewCode.id)}.svg`;
   a.click();
 });
 
 els.previewPng.addEventListener("click", () => {
   if (!state.activePreviewCode) return;
-  downloadPng(activePreviewUrl(), currentDesign(), `vortap-${safeName(state.activePreviewCode.name, state.activePreviewCode.id)}`);
+  downloadPng(state.activePreviewCode, `vortap-${safeName(state.activePreviewCode.name, state.activePreviewCode.id)}`);
 });
 
 async function load() {
   try {
-    const payload = await api("/api/codes");
+    const [status, payload] = await Promise.all([api("/api/status"), api("/api/codes")]);
+    state.status = status;
     state.codes = payload.codes;
     state.activePreviewCode = state.codes[0] || null;
   } catch (error) {
